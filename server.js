@@ -7,7 +7,6 @@ const authRoutes = require('./routes/auth');
 require('dotenv').config();
 
 const app = express();
-const PORT = process.env.PORT || 5000;
 
 // Middleware
 app.use(cookieParser());
@@ -38,6 +37,13 @@ app.get('/', (req, res) => {
   res.json({ message: 'Habit Tracker API' });
 });
 
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+// For Vercel deployment - Export the app as a serverless function
+module.exports = app;
+
+// For local development - Keep the server listening
+if (require.main === module) {
+  const PORT = process.env.PORT || 5000;
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+  });
+}
