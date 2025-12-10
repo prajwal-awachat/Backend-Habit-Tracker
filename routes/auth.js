@@ -3,6 +3,16 @@ const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const router = express.Router();
 
+// Helper function to set cookie
+const setAuthCookie = (res, token) => {
+  res.cookie('token', token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax', // Changed for cross-origin support
+    maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+  });
+};
+
 // Register
 router.post('/register', async (req, res) => {
   try {
@@ -24,19 +34,15 @@ router.post('/register', async (req, res) => {
     });
 
     // Set cookie
-    res.cookie('token', token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
-    });
+    setAuthCookie(res, token);
 
     res.status(201).json({
       user: {
         id: user._id,
         username: user.username,
         email: user.email
-      }
+      },
+      token: token // Also send token in response for localStorage
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -66,19 +72,15 @@ router.post('/login', async (req, res) => {
     });
 
     // Set cookie
-    res.cookie('token', token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      maxAge: 7 * 24 * 60 * 60 * 1000
-    });
+    setAuthCookie(res, token);
 
     res.json({
       user: {
         id: user._id,
         username: user.username,
         email: user.email
-      }
+      },
+      token: token // Also send token in response for localStorage
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -87,14 +89,19 @@ router.post('/login', async (req, res) => {
 
 // Logout
 router.post('/logout', (req, res) => {
-  res.clearCookie('token');
+  res.clearCookie('token', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+  });
   res.json({ message: 'Logged out successfully' });
 });
 
 // Get current user
 router.get('/me', async (req, res) => {
   try {
-    const token = req.cookies.token || req.headers.authorization?.split(' ')[1];
+    // Try to get token from cookie first, then from Authorization header
+    const token = req.cookies.token || req.headers.authorization?.replace('Bearer ', '');
     
     if (!token) {
       return res.status(401).json({ message: 'Not authenticated' });
@@ -109,7 +116,13 @@ router.get('/me', async (req, res) => {
 
     res.json({ user });
   } catch (error) {
-    res.status(401).json({ message: 'Invalid token' });
+    if (error.name === 'TokenExpiredError') {
+      return res.status(401).json({ message: 'Token expired' });
+    }
+    if (error.name === 'JsonWebTokenError') {
+      return res.status(401).json({ message: 'Invalid token' });
+    }
+    res.status(500).json({ message: error.message });
   }
 });
 
